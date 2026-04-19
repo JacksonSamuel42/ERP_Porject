@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+    <body>
+        <div>
+            <h2>Confirme o seu E-mail</h2>
+
+            <p>Olá, <strong>{{ name }}</strong>!</p>
+
+            <p>
+                Obrigado por se registar no nosso ERP. Para ativar a sua conta,
+                utilize o código de verificação abaixo:
+            </p>
+
+            <div>
+                <strong>{{ code }}</strong>
+            </div>
+
+            <p>Este código é válido por {{ expires_in }} minutos.</p>
+
+            <p>Ou clique no link abaixo para verificar automaticamente:</p>
+
+            <p>
+                <a href="{{ verify_url }}">Verificar Conta</a>
+            </p>
+
+            <hr />
+
+            <p>
+                Se não solicitou este registo, pode ignorar este e-mail com
+                segurança.
+            </p>
+        </div>
+    </body>
+</html>

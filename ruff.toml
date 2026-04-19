@@ -1,0 +1,9 @@
+line-length = 100
+
+[lint]
+ignore = ["E501"]
+extend-select = ["I"]
+
+[format]
+quote-style = "single"
+docstring-code-format = true

@@ -1,0 +1,31 @@
+[project]
+name = "project-g"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aioboto3>=15.5.0",
+    "aiofiles>=25.1.0",
+    "alembic>=1.18.4",
+    "asyncpg>=0.31.0",
+    "bcrypt==4.0.1",
+    "cryptography>=46.0.6",
+    "fastapi-mail>=1.6.2",
+    "fastapi[standard]>=0.135.2",
+    "httptools>=0.7.1",
+    "loguru>=0.7.3",
+    "passlib[bcrypt]>=1.7.4",
+    "python-dotenv>=1.2.2",
+    "python-jose[cryptography]>=3.5.0",
+    "python-multipart>=0.0.22",
+    "sqlalchemy>=2.0.48",
+    "uvicorn>=0.42.0",
+    "uvloop>=0.22.1",
+]
+
+[dependency-groups]
+dev = [
+    "python-lsp-server[all]>=1.14.0",
+    "ruff>=0.15.8",
+]

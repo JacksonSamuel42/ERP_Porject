@@ -1,0 +1,32 @@
+{
+  "languages": {
+    "Python": {
+      "language_servers": ["pylsp", "ruff"],
+      "format_on_save": "on",
+      "formatter": {
+        "language_server": {
+          "name": "ruff",
+        },
+      },
+    },
+  },
+  "lsp": {
+    "pylsp": {
+      "binary": {
+        "path": ".venv/bin/pylsp",
+      },
+      "settings": {
+        "plugins": {
+          "jedi": {
+            "enabled": true,
+            "environment": ".venv",
+          },
+          "ruff": { "enabled": false },
+          "pycodestyle": { "enabled": false },
+          "pyflakes": { "enabled": false },
+          "mccabe": { "enabled": false },
+        },
+      },
+    },
+  },
+}
