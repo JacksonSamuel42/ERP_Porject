@@ -108,6 +108,10 @@ class PartnerProfileBase(BaseModel):
     neighborhood: Optional[str] = None
     building: Optional[str] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PartnerProfileCreate(PartnerProfileBase):
     @field_validator('nif')
     @classmethod
     def validate_nif_angola(cls, v: str):
@@ -120,8 +124,6 @@ class PartnerProfileBase(BaseModel):
                 'NIF inválido para o padrão de Angola. Deve conter 10 dígitos e opcionalmente uma letra.'
             )
         return v.upper()
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class PartnerProfileResponse(PartnerProfileBase):
@@ -146,6 +148,8 @@ class ClientProfileBase(BaseModel):
     neighborhood: Optional[str] = None
     building: Optional[str] = None
 
+
+class ClientProfileCreate(PartnerProfileBase):
     @field_validator('nif')
     @classmethod
     def validate_nif_angola(cls, v: str):
@@ -158,26 +162,6 @@ class ClientProfileBase(BaseModel):
                 'NIF inválido para o padrão de Angola. Deve conter 10 dígitos e opcionalmente uma letra.'
             )
         return v.upper()
-
-    # model_config = ConfigDict(
-    #     json_schema_extra={
-    #         "example": {
-    #             "name": "",
-    #             "legal_name": "",
-    #             "nif": "",
-    #             "email": "",
-    #             "phone_number": "",
-    #             "website": "",
-    #             "regime": "",
-    #             "registration_number": "",
-    #             "province": "",
-    #             "municipality": "",
-    #             "street": "",
-    #             "neighborhood": "",
-    #             "building": ""
-    #         }
-    #     }
-    # )
 
 
 class ClientProfileResponse(ClientProfileBase):
@@ -211,12 +195,12 @@ class ClientUserResponse(ClientUserBase):
 
 class PartnerRegister(BaseModel):
     user: UserCreate
-    profile: PartnerProfileBase
+    profile: PartnerProfileCreate
 
 
 class ClientRegister(BaseModel):
     user: UserCreate
-    profile: ClientProfileBase
+    profile: ClientProfileCreate
 
 
 class ClientUserRegister(BaseModel):

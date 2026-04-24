@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import GRACE_PERIOD_DAYS, MAX_OFFLINE_DAYS
 from app.auth.models import ClientProfile, ClientUser, PartnerProfile, User
+from app.finance.constants import IVA_TAX_RATE
+from app.finance.service import FinanceService
 from app.license.config import license_settings
 from app.license.exceptions import (
     LicenseNotFoundException,
@@ -97,6 +99,7 @@ class LicenseService:
     @staticmethod
     async def assign_license_to_partner(
         session: AsyncSession,
+        user_id: uuid.UUID,
         partner_id: uuid.UUID,
         partner_plan_id: uuid.UUID,
         period: LicensePeriod,
@@ -123,10 +126,38 @@ class LicenseService:
             expiry_date=expiry_date,
             period=period,
             license_key=generated_key,
-            is_active=True,
+            is_active=False,
         )
 
         session.add(new_lic)
+        await session.flush()
+
+        # Gerar a Fatura (O emissor é o Admin/Actor)
+        # O base_amount vem do preço do plano de parceiro
+        new_invoice = await FinanceService.create_invoice_for_license(
+            session=session,
+            actor_id=user_id,
+            issuer_id=user_id,
+            recipient_id=partner_id,
+            is_client=False,
+            base_amount=partner_plan.price,
+            partner_license_id=new_lic.id,
+            tax_rate=IVA_TAX_RATE,
+        )
+
+        # Registro de Auditoria Técnica
+        await FinanceService._log_action(
+            session,
+            actor_id=user_id,
+            action_type='PARTNER_LICENSE_ASSIGNED',
+            target_id=new_lic.id,
+            details={
+                'partner_id': str(partner_id),
+                'plan_id': str(partner_plan_id),
+                'invoice_id': str(new_invoice.id),
+                'period': period.value,
+            },
+        )
         try:
             await session.commit()
             await session.refresh(new_lic)
@@ -246,12 +277,36 @@ class LicenseService:
             license_key=signed_license_key,
             license_metadata=metadata,
             authorized_machines=[],
+            is_active=False,
         )
 
         session.add(new_client_lic)
+        await session.flush()
+
+        # Criar a Fatura vinculada à licença recém-criada
+        new_invoice = await FinanceService.create_invoice_for_license(
+            session=session,
+            actor_id=user_id,
+            issuer_id=user_id,
+            recipient_id=client_id,
+            is_client=True,
+            base_amount=erp_plan.base_price,
+            client_license_id=new_client_lic.id,
+            tax_rate=IVA_TAX_RATE,
+        )
+
         try:
             await session.commit()
             await session.refresh(new_client_lic)
+
+            await FinanceService._log_action(
+                session,
+                user_id,
+                'LICENSE_EMITTED',
+                new_client_lic.id,
+                {'client_id': str(client_id), 'invoice_id': str(new_invoice.id)},
+            )
+
             return new_client_lic
         except Exception as e:
             await session.rollback()

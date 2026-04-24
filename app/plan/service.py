@@ -1,6 +1,7 @@
 import uuid
 from typing import Dict, List, Optional
 
+from fastapi_pagination.ext.sqlalchemy import paginate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -19,14 +20,17 @@ class PlanService:
         session: AsyncSession,
         name: str,
         modules_enabled: Dict,
+        base_price: float,
         plan_ranges: Dict,
         default_max_machines: Optional[int] = 1,
         sync_enabled: bool = True,
     ) -> ERPPlan:
         """Cria um novo plano de funcionalidades para o ERP."""
+        formatted_base_price = format(base_price, '.2f')
         new_plan = ERPPlan(
             name=name,
             modules_enabled=modules_enabled,
+            base_price=float(formatted_base_price),
             plan_ranges=plan_ranges,
             default_max_machines=default_max_machines,
             sync_enabled=sync_enabled,
@@ -93,11 +97,19 @@ class PlanService:
 
     @staticmethod
     async def create_partner_plan(
-        session: AsyncSession, name: str, max_clients: int, allowed_erp_plans: List[str]
+        session: AsyncSession,
+        name: str,
+        price: float,
+        max_clients: int,
+        allowed_erp_plans: List[str],
     ) -> PartnerPlan:
         """Cria um plano que define o que o parceiro pode revender."""
+        formatted_price = format(price, '.2f')
         new_plan = PartnerPlan(
-            name=name, max_clients=max_clients, allowed_erp_plans=allowed_erp_plans
+            name=name,
+            price=float(formatted_price),
+            max_clients=max_clients,
+            allowed_erp_plans=allowed_erp_plans,
         )
         session.add(new_plan)
         await session.commit()
@@ -158,17 +170,20 @@ class PlanService:
     # --- LISTAGENS ---
 
     @staticmethod
-    async def list_erp_plans(session: AsyncSession) -> List[ERPPlan]:
-        """Lista todos os planos ERP disponíveis para novas licenças."""
-        result = await session.execute(
-            select(ERPPlan).where(ERPPlan.is_active).order_by(ERPPlan.name)
-        )
-        return result.scalars().all()
+    async def list_erp_plans(session: AsyncSession, is_active: bool = True):
+        """
+        Retorna uma query que será paginada na rota.
+        """
+        query = select(ERPPlan).where(ERPPlan.is_active == is_active).order_by(ERPPlan.name)
+        # O paginate do fastapi-pagination cuida do resto
+        return await paginate(session, query)
 
     @staticmethod
-    async def list_partner_plans(session: AsyncSession) -> List[PartnerPlan]:
-        """Lista todos os planos de parceiro disponíveis para novos contratos."""
-        result = await session.execute(
-            select(PartnerPlan).where(PartnerPlan.is_active).order_by(PartnerPlan.name)
+    async def list_partner_plans(session: AsyncSession, is_active: bool = True):
+        """
+        Lista planos de parceiro usando a paginação automática.
+        """
+        query = (
+            select(PartnerPlan).where(PartnerPlan.is_active == is_active).order_by(PartnerPlan.name)
         )
-        return result.scalars().all()
+        return await paginate(session, query)

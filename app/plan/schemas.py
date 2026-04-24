@@ -11,6 +11,10 @@ class PartnerPlanBase(BaseModel):
         Optional[int],
         Doc('Maximum number of clients this partner can manage. Null means unlimited'),
     ] = None
+    price: Annotated[
+        float,
+        Doc('Price per client for this partner level'),
+    ] = 0.00
     allowed_erp_plans: Annotated[
         List,
         Doc('List of ERP Plan IDs that this partner is authorized to resell'),
@@ -24,6 +28,7 @@ class PartnerPlanCreate(PartnerPlanBase):
 class PartnerPlanUpdate(BaseModel):
     name: Optional[str] = None
     max_clients: Optional[int] = None
+    price: Optional[float] = None
     allowed_erp_plans: Optional[List] = None
 
 
@@ -37,6 +42,7 @@ class PartnerPlanResponse(PartnerPlanBase):
                 'id': '770e8400-e29b-41d4-a716-446655440001',
                 'name': 'Premium Reseller',
                 'max_clients': 50,
+                'price': 100.00,
                 'allowed_erp_plans': ['550e8400-e29b-41d4-a716-446655440002'],
             }
         },
@@ -51,6 +57,10 @@ class ERPPlanBase(BaseModel):
     default_max_machines: Annotated[
         Optional[int], Doc('Default hardware activation limit. Null means unlimited')
     ] = 1
+    base_price: Annotated[
+        float,
+        Doc('Price per client for this ERP plan'),
+    ] = 0.00
     modules_enabled: Annotated[
         Dict[str, bool],
         Doc("Mapping of active modules (e.g., {'billing': true, 'hr': false})"),
@@ -72,6 +82,7 @@ class ERPPlanUpdate(BaseModel):
     name: Optional[str] = None
     default_max_machines: Optional[int] = None
     modules_enabled: Optional[Dict[str, bool]] = None
+    base_price: Optional[float] = None
     sync_enabled: Optional[bool] = None
     plan_ranges: Optional[Dict[str, Any]] = None
 
@@ -87,6 +98,7 @@ class ERPPlanResponse(ERPPlanBase):
                 'name': 'Standard Business',
                 'default_max_machines': 3,
                 'sync_enabled': True,
+                'base_price': 0.00,
                 'modules_enabled': {'billing': True, 'inventory': True, 'pos': True},
                 'plan_ranges': {'max_users': 5, 'max_monthly_invoices': 1000},
             }

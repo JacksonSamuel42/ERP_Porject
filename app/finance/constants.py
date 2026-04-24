@@ -1,0 +1,2 @@
+INVOCE_DUE_DAYS = 3  # days
+IVA_TAX_RATE = 14.0

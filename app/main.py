@@ -3,8 +3,10 @@ from typing import AsyncIterator
 
 import anyio
 from fastapi import FastAPI
+from fastapi_pagination import add_pagination
 
 from app.auth.router import router as auth_router
+from app.finance.router import router as finance_router
 from app.license.router import router as license_router
 from app.plan.router import router as plan_router
 from app.user.router import router as user_router
@@ -20,11 +22,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(lifespan=lifespan)
+add_pagination(app)
 
 
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(license_router)
 app.include_router(plan_router)
+app.include_router(finance_router)
 
 # generate_production_keys()

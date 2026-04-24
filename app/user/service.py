@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import BackgroundTasks, UploadFile
-from sqlalchemy import select
+from fastapi_pagination.ext.sqlalchemy import paginate
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import ProfileNotFoundException
@@ -34,6 +36,99 @@ from app.user.schemas import (
 
 
 class UserService:
+    @staticmethod
+    async def get_user(session: AsyncSession, user_id: uuid.UUID) -> User:
+        user = await session.get(User, user_id)
+        if not user:
+            raise UserNotFoundException()
+        return user
+
+    @staticmethod
+    async def get_partner(session: AsyncSession, partner_id: uuid.UUID) -> PartnerProfile:
+        partner = await session.get(PartnerProfile, partner_id)
+        if not partner:
+            raise ProfileNotFoundException()
+        return partner
+
+    @staticmethod
+    async def get_client(session: AsyncSession, client_id: uuid.UUID) -> ClientProfile:
+        client = await session.get(ClientProfile, client_id)
+        if not client:
+            raise ProfileNotFoundException()
+        return client
+
+    @staticmethod
+    async def get_client_user(session: AsyncSession, client_user_id: uuid.UUID) -> ClientUser:
+        client_user = await session.get(ClientUser, client_user_id)
+        if not client_user:
+            raise ProfileNotFoundException()
+        return client_user
+
+    # --- MÉTODOS DE LISTAGEM PAGINADA COM FILTROS ---
+
+    @staticmethod
+    async def get_all_users(session: AsyncSession, filters: Optional[dict] = None):
+        """Lista todos os usuários com filtros de busca e status."""
+        query = select(User).order_by(User.name)
+
+        if filters:
+            if filters.get('is_active') is not None:
+                query = query.where(User.is_active == filters['is_active'])
+            if filters.get('is_verified') is not None:
+                query = query.where(User.is_verified == filters['is_verified'])
+            if filters.get('search'):
+                s = f'%{filters["search"]}%'
+                query = query.where(or_(User.name.ilike(s), User.email.ilike(s)))
+
+        return await paginate(session, query)
+
+    @staticmethod
+    async def get_all_partners(session: AsyncSession, filters: Optional[dict] = None):
+        """Lista perfis de parceiros com filtros comerciais."""
+        query = select(PartnerProfile).order_by(PartnerProfile.company_name)
+
+        if filters:
+            if filters.get('search'):
+                s = f'%{filters["search"]}%'
+                query = query.where(
+                    or_(PartnerProfile.company_name.ilike(s), PartnerProfile.cnpj.ilike(s))
+                )
+
+        return await paginate(session, query)
+
+    @staticmethod
+    async def get_all_clients(
+        session: AsyncSession,
+        partner_id: Optional[uuid.UUID] = None,
+        filters: Optional[dict] = None,
+    ):
+        """Lista clientes, opcionalmente filtrados por um parceiro específico."""
+        query = select(ClientProfile).order_by(ClientProfile.name)
+
+        if partner_id:
+            query = query.where(ClientProfile.partner_id == partner_id)
+
+        if filters:
+            if filters.get('search'):
+                s = f'%{filters["search"]}%'
+                query = query.where(or_(ClientProfile.name.ilike(s), ClientProfile.email.ilike(s)))
+
+        return await paginate(session, query)
+
+    @staticmethod
+    async def get_all_client_users(
+        session: AsyncSession, client_id: uuid.UUID, filters: Optional[dict] = None
+    ):
+        """Lista usuários/funcionários de um cliente específico."""
+        query = select(ClientUser).where(ClientUser.client_id == client_id).order_by(ClientUser.id)
+
+        if filters and filters.get('role_name'):
+            query = query.where(ClientUser.role_name == filters['role_name'])
+
+        return await paginate(session, query)
+
+    # -------------------------------------------------------
+    #
     @staticmethod
     async def verify_email(session: AsyncSession, email: str, code: str):
         """Valida o OTP e ativa a conta do usuário."""

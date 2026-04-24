@@ -1,5 +1,6 @@
 from app.auth.models import AuditLog, ClientProfile, ClientUser, PartnerProfile, User
 from app.database import Base
+from app.finance.models import InvoiceLicense, PaymentLicense
 from app.license.models import ClientLicense, PartnerLicense
 from app.plan.models import ERPPlan, PartnerPlan
 
@@ -14,4 +15,6 @@ __all__ = [
     'ERPPlan',
     'PartnerLicense',
     'PartnerPlan',
+    'InvoiceLicense',
+    'PaymentLicense',
 ]

@@ -1,7 +1,8 @@
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile, status
+from fastapi_pagination import Page
 
 from app.auth.dependencies import (
     CurrentSession,
@@ -11,7 +12,13 @@ from app.auth.dependencies import (
     allow_client,
     allow_partner,
 )
-from app.auth.models import UserRole
+from app.auth.models import ClientUserRole, UserRole
+from app.auth.schemas import (
+    ClientProfileResponse,
+    ClientUserResponse,
+    PartnerProfileResponse,
+    UserResponse,
+)
 from app.user.schemas import (
     ClientProfileUpdate,
     ClientUserUpdate,
@@ -27,6 +34,74 @@ from app.user.schemas import (
 from app.user.service import UserService
 
 router = APIRouter(prefix='/users', tags=['Users'])
+
+
+@router.get('/', response_model=Page[UserResponse])
+async def list_users(
+    session: CurrentSession,
+    current_user: CurrentUser,
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    verified: Optional[bool] = None,
+):
+    filters = {'search': search, 'is_active': active, 'is_verified': verified}
+    return await UserService.get_all_users(session, filters=filters)
+
+
+@router.get('/{user_id}', response_model=UserResponse)
+async def get_user(user_id: uuid.UUID, session: CurrentSession, current_user: CurrentUser):
+    return await UserService.get_user(session, user_id)
+
+
+# PROFILE
+@router.get('/partners/all', response_model=Page[PartnerProfileResponse])
+async def list_partners(
+    session: CurrentSession,
+    current_user: CurrentUser,
+    search: Optional[str] = None,
+):
+    filters = {'search': search}
+    return await UserService.get_all_partners(session, filters=filters)
+
+
+@router.get('/partners/{partner_id}', response_model=PartnerProfileResponse)
+async def get_partner(partner_id: uuid.UUID, session: CurrentSession, current_user: CurrentUser):
+    return await UserService.get_partner(session, partner_id)
+
+
+@router.get('/clients/all', response_model=Page[ClientProfileResponse])
+async def list_clients(
+    session: CurrentSession,
+    current_user: CurrentUser,
+    partner_id: Optional[uuid.UUID] = None,
+    search: Optional[str] = None,
+):
+    """Admin ou Parceiro listando clientes."""
+    filters = {'search': search}
+    return await UserService.get_all_clients(session, partner_id=partner_id, filters=filters)
+
+
+@router.get('/clients/{client_id}', response_model=ClientProfileResponse)
+async def get_client(client_id: uuid.UUID, session: CurrentSession, current_user: CurrentUser):
+    return await UserService.get_client(session, client_id)
+
+
+@router.get('/clients/{client_id}/users', response_model=Page[ClientUserResponse])
+async def list_client_users(
+    session: CurrentSession,
+    current_user: CurrentUser,
+    client_id: uuid.UUID,
+    role_name: Optional[ClientUserRole] = None,
+):
+    filters = {'role_name': role_name}
+    return await UserService.get_all_client_users(session, client_id=client_id, filters=filters)
+
+
+@router.get('/client-users/{client_user_id}', response_model=ClientUserResponse)
+async def get_client_user(
+    client_user_id: uuid.UUID, session: CurrentSession, current_user: CurrentUser
+):
+    return await UserService.get_client_user(session, client_user_id)
 
 
 @router.post('/verify-email', status_code=status.HTTP_200_OK)
@@ -137,9 +212,6 @@ async def confirm_my_email_update(
     session: CurrentSession,
 ):
     return await UserService.confirm_email_update(session, current_user.id, code)
-
-
-# PROFILE
 
 
 @router.patch('/me/profile/partner', dependencies=[Depends(allow_partner)])

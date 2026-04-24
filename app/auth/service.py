@@ -131,7 +131,7 @@ class AuthService:
             email=user_in.email,
             password=hash_password(user_in.password),
             username=user_in.username,
-            role=UserRole.ADMIN.value,
+            role=UserRole.ADMIN,
         )
         session.add(new_user)
 
@@ -158,7 +158,7 @@ class AuthService:
             email=data.user.email,
             username=data.user.username,
             password=hash_password(data.user.password),
-            role=UserRole.PARTNER.value,
+            role=UserRole.PARTNER,
             is_active=False,
             is_verified=False,
             verification_code=otp_code,
@@ -197,7 +197,7 @@ class AuthService:
             email=data.user.email,
             username=data.user.username,
             password=hash_password(data.user.password),
-            role=UserRole.CLIENT.value,
+            role=UserRole.CLIENT,
             is_verified=True,
         )
         session.add(new_user)
@@ -227,7 +227,7 @@ class AuthService:
             email=data.user.email,
             password=hash_password(data.user.password),
             username=data.user.username,
-            role=UserRole.CLIENT_USER.value,
+            role=UserRole.CLIENT_USER,
             is_verified=True,
         )
         session.add(new_user)
@@ -242,7 +242,7 @@ class AuthService:
 
         # Gera o código do funcionário
         data.employee_info.employee_id = UserUtils.generate_employee_code()
-        data.employee_info.role_name = data.employee_info.role_name.value
+        data.employee_info.role_name = data.employee_info.role_name
         new_link = ClientUser(user_id=new_user.id, **data.employee_info.model_dump())
         session.add(new_link)
 

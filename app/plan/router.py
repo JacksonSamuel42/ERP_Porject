@@ -1,7 +1,7 @@
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, status
+from fastapi_pagination import Page
 
 from app.auth.dependencies import CurrentSession, allow_admin, allow_any, allow_partner
 from app.plan.schemas import (
@@ -30,10 +30,10 @@ async def create_erp_plan(payload: ERPPlanCreate, session: CurrentSession):
     return await PlanService.create_erp_plan(session=session, **payload.model_dump())
 
 
-@router.get('/erp', response_model=List[ERPPlanResponse], dependencies=[Depends(allow_any)])
-async def list_erp_plans(session: CurrentSession):
+@router.get('/erp', response_model=Page[ERPPlanResponse], dependencies=[Depends(allow_any)])
+async def list_erp_plans(session: CurrentSession, is_active: bool = True):
     """Lista todos os planos ERP disponíveis para novas licenças."""
-    return await PlanService.list_erp_plans(session)
+    return await PlanService.list_erp_plans(session, is_active)
 
 
 @router.get('/erp/{plan_id}', response_model=ERPPlanResponse, dependencies=[Depends(allow_any)])
@@ -80,11 +80,11 @@ async def create_partner_plan(payload: PartnerPlanCreate, session: CurrentSessio
 
 
 @router.get(
-    '/partner', response_model=List[PartnerPlanResponse], dependencies=[Depends(allow_partner)]
+    '/partner', response_model=Page[PartnerPlanResponse], dependencies=[Depends(allow_partner)]
 )
-async def list_partner_plans(session: CurrentSession):
+async def list_partner_plans(session: CurrentSession, is_active: bool = True):
     """Lista todos os planos de parceiro disponíveis para novos contratos."""
-    return await PlanService.list_partner_plans(session)
+    return await PlanService.list_partner_plans(session, is_active)
 
 
 @router.get(
