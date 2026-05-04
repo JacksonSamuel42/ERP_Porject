@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import GRACE_PERIOD_DAYS, MAX_OFFLINE_DAYS
-from app.auth.models import ClientProfile, ClientUser, PartnerProfile, User
+from app.auth.models import AuditLog, ClientProfile, ClientUser, PartnerProfile, User
 from app.finance.constants import IVA_TAX_RATE
 from app.finance.service import FinanceService
 from app.license.config import license_settings
@@ -93,6 +93,23 @@ class LicenseService:
         )
         res = await session.execute(stmt)
         return res.scalar_one_or_none() is not None
+
+    # License Expiry
+    @staticmethod
+    async def deactivate_expired_licenses(session: AsyncSession):
+        """Busca e desativa todas as licenças que passaram da data de expiração."""
+        now = datetime.now(timezone.utc)
+
+        # Seleciona apenas licenças ativas que já deveriam ter expirado
+        stmt = (
+            update(ClientLicense)
+            .where(ClientLicense.is_active, ClientLicense.expiry_date < now)
+            .values(is_active=False)
+        )
+
+        result = await session.execute(stmt)
+        await session.commit()
+        return result.rowcount
 
     # ---------- Partner Licensing ----------
 
@@ -352,6 +369,7 @@ class LicenseService:
             'plan_name': erp_plan.name,
             'modules': erp_plan.modules_enabled,
             'ranges': erp_plan.plan_ranges,
+            'offline_only': license.offline_only,
             'max_machines': erp_plan.default_max_machines,
             'machines': license.authorized_machines,
             'iat': int(datetime.now(timezone.utc).timestamp()),
@@ -363,6 +381,73 @@ class LicenseService:
         license.license_key = LicenseCrypto.sign_license_data(
             data=full_license_data, private_key_pem=private_key_pem.encode('utf-8')
         )
+
+        try:
+            await session.commit()
+            await session.refresh(license)
+            return license
+        except Exception as e:
+            await session.rollback()
+            raise e
+
+    @staticmethod
+    async def upgrade_client_offline_mode(
+        session: AsyncSession, client_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> ClientLicense:
+        """
+        Ativa o modo offline para uma licença existente e gera uma nova chave assinada.
+        """
+        # Buscar a licença ativa e os dados do plano
+        stmt = (
+            select(ClientLicense, ERPPlan)
+            .join(ERPPlan, ClientLicense.plan_id == ERPPlan.id)
+            .where(
+                ClientLicense.client_id == client_id,
+                ClientLicense.is_active,
+                ClientLicense.expiry_date >= datetime.now(timezone.utc),
+            )
+        )
+        result = await session.execute(stmt)
+        row = result.first()
+
+        if not row:
+            raise LicenseNotFoundException()
+
+        license, erp_plan = row
+
+        # Atualizar o status (só altera se já não for True)
+        if license.offline_only:
+            return license  # Já possui o upgrade
+
+        license.offline_only = True
+
+        # RECONSTRUIR o payload para a nova assinatura RSA
+        full_license_data = {
+            'version': '1.0',
+            'client_id': str(license.client_id),
+            'plan_name': erp_plan.name,
+            'modules': erp_plan.modules_enabled,
+            'ranges': erp_plan.plan_ranges,
+            'offline_only': True,
+            'max_machines': erp_plan.default_max_machines,
+            'machines': license.authorized_machines,
+            'iat': int(datetime.now(timezone.utc).timestamp()),
+            'exp': int(license.expiry_date.timestamp()),
+        }
+
+        # Gerar nova assinatura
+        private_key_pem = license_settings.RSA_PRIVATE_KEY
+        license.license_key = LicenseCrypto.sign_license_data(
+            data=full_license_data, private_key_pem=private_key_pem.encode('utf-8')
+        )
+
+        audit = AuditLog(
+            actor_id=actor_id,
+            action_type='LICENSE_OFFLINE_UPGRADE',
+            target_id=license.id,
+            details={'client_id': str(client_id), 'upgrade': 'offline_mode'},
+        )
+        session.add(audit)
 
         try:
             await session.commit()

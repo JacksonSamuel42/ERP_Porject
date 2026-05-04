@@ -1,3 +1,4 @@
+import uuid
 from typing import Union
 
 from fastapi import APIRouter, Depends, status
@@ -53,6 +54,15 @@ async def emit_client_license(
         offline_only=data.offline_only,
         expiry_date=None,  # O service já calcula via utils
     )
+
+
+@router.patch('/clients/{client_id}/upgrade-offline')
+async def upgrade_to_offline(
+    client_id: uuid.UUID,
+    session: CurrentSession,
+    current_user: CurrentUser,
+):
+    return await LicenseService.upgrade_client_offline_mode(session, client_id, current_user.id)
 
 
 @router.get(

@@ -4,6 +4,29 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
+def validate_password(cls, v: str) -> str:
+    """
+    Valida se a senha tem:
+    - Pelo menos 8 caracteres
+    - Pelo menos uma letra maiúscula
+    - Pelo menos um número
+    - Pelo menos um caractere especial
+    """
+    if len(v) < 8:
+        raise ValueError('A senha deve ter pelo menos 8 caracteres.')
+
+    if not re.search(r'[A-Z]', v):
+        raise ValueError('A senha deve conter pelo menos uma letra maiúscula.')
+
+    if not re.search(r'[0-9]', v):
+        raise ValueError('A senha deve conter pelo menos um número.')
+
+    if not re.search(r'[!@#$%^&*(),.?\":{}|<>]', v):
+        raise ValueError('A senha deve conter pelo menos um caractere especial.')
+
+    return v
+
+
 class VerifyEmailRequest(BaseModel):
     email: EmailStr
     code: str = Field(..., min_length=6, max_length=6)
@@ -21,6 +44,11 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8)
 
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        return validate_password(cls, v)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -33,6 +61,11 @@ class UserUpdate(BaseModel):
 class UserUpdatePassword(BaseModel):
     current_password: str = Field(..., min_length=8)
     new_password: str = Field(..., min_length=8)
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        return validate_password(cls, v)
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -12,6 +12,7 @@ from app.auth.models import AuditLog, ClientProfile, ClientUser, PartnerProfile,
 from app.auth.security import hash_password, verify_password
 from app.auth.utils import SecurityUtils
 from app.config import settings
+from app.core.logger import logger
 from app.core.mail import Mailer
 from app.core.upload_utils import S3UploadUtils
 from app.user.exceptions import (
@@ -234,6 +235,8 @@ class UserService:
 
         user.password = hash_password(data.new_password)
         await session.commit()
+
+        logger.bind(user_id=str(user_id)).info('Senha do usuário alterada com sucesso.')
         return {'message': 'Password changed successfully.'}
 
     @staticmethod
