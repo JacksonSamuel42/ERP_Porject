@@ -101,3 +101,10 @@ class ClientLicenseResponse(ClientLicenseBase):
         from_attributes=True,
         use_enum_values=True,
     )
+
+
+LICENSE_REGEX = r'^PRT-\d{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'
+
+
+class LicenseVerifyResponse(BaseModel):
+    valid: bool

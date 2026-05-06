@@ -49,6 +49,9 @@ class UserService:
         partner = await session.get(PartnerProfile, partner_id)
         if not partner:
             raise ProfileNotFoundException()
+
+        if partner.logo:
+            partner.logo = await S3UploadUtils.generate_presigned_url(partner.logo)
         return partner
 
     @staticmethod
@@ -56,6 +59,9 @@ class UserService:
         client = await session.get(ClientProfile, client_id)
         if not client:
             raise ProfileNotFoundException()
+
+        if client.logo:
+            client.logo = await S3UploadUtils.generate_presigned_url(client.logo)
         return client
 
     @staticmethod
@@ -476,13 +482,14 @@ class UserService:
 
         # Apagar logo antiga se existir
         if profile.logo:
-            S3UploadUtils.delete_file(profile.logo)
+            await S3UploadUtils.delete_file(profile.logo)
 
         # Atualizar DB
         profile.logo = new_logo_path
+        logo_url = await S3UploadUtils.generate_presigned_url(profile.logo)
         await session.commit()
 
-        return {'logo_url': new_logo_path}
+        return {'logo_url': logo_url}
 
     @staticmethod
     async def upload_client_logo(session: AsyncSession, user_id: uuid.UUID, file: UploadFile):
@@ -500,10 +507,12 @@ class UserService:
 
         # Apagar logo antiga se existir
         if profile.logo:
-            S3UploadUtils.delete_file(profile.logo)
+            await S3UploadUtils.delete_file(profile.logo)
 
         # Atualizar DB
         profile.logo = new_logo_path
+        logo_url = await S3UploadUtils.generate_presigned_url(profile.logo)
+
         await session.commit()
 
-        return {'logo_url': new_logo_path}
+        return {'logo_url': logo_url}

@@ -16,7 +16,10 @@ from app.finance.service import FinanceService
 router = APIRouter(prefix='/finance', tags=['Finance'])
 
 
-@router.get('/invoices/{invoice_id}', response_model=InvoiceLicenseResponse)
+@router.get(
+    '/invoices/{invoice_id}',
+    response_model=InvoiceLicenseResponse,
+)
 async def get_invoice_details(
     invoice_id: uuid.UUID,
     session: CurrentSession,
@@ -27,6 +30,20 @@ async def get_invoice_details(
     """
     invoice = await FinanceService.get_invoice_with_payments(session, invoice_id)
     return invoice
+
+
+@router.get(
+    '/payments/{payment_id}',
+    response_model=PaymentLicenseResponse,
+    dependencies=[Depends(allow_partner)],
+)
+async def get_payment_by_id(
+    payment_id: uuid.UUID,
+    session: CurrentSession,
+    current_user: CurrentUser,
+):
+    """ """
+    return await FinanceService.get_payment_by_id(session, payment_id)
 
 
 @router.post(

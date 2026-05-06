@@ -2,6 +2,7 @@ import uuid
 from typing import Optional
 
 import aioboto3
+from botocore.config import Config
 from fastapi import UploadFile
 
 from app.config import settings
@@ -11,12 +12,16 @@ class S3UploadUtils:
     @staticmethod
     async def get_s3_session():
         session = aioboto3.Session()
+        s3_config = Config(
+            signature_version='s3v4', retries={'max_attempts': 3}, s3={'addressing_style': 'path'}
+        )
         return session.client(
             's3',
             region_name=settings.S3_REGION,
             aws_access_key_id=settings.S3_ACCESS_KEY,
             aws_secret_access_key=settings.S3_SECRET_KEY,
             endpoint_url=settings.S3_ENDPOINT_URL,
+            config=s3_config,
         )
 
     @staticmethod

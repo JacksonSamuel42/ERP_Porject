@@ -149,7 +149,7 @@ class ClientProfileBase(BaseModel):
     building: Optional[str] = None
 
 
-class ClientProfileCreate(PartnerProfileBase):
+class ClientProfileCreate(ClientProfileBase):
     @field_validator('nif')
     @classmethod
     def validate_nif_angola(cls, v: str):

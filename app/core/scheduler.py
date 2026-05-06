@@ -11,9 +11,12 @@ scheduler = AsyncIOScheduler()
 
 async def job_deactivate_licenses():
     async with AsyncSessionLocal() as session:
-        count = await LicenseService.deactivate_expired_licenses(session)
+        count = await LicenseService.deactivate_client_expired_licenses(session)
+        count2 = await LicenseService.deactivate_partner_expired_licenses(session)
         if count > 0:
             logger.info(f'[Scheduler] {count} licenças expiradas foram desativadas.')
+        if count2 > 0:
+            logger.info(f'[Scheduler] {count2} licenças expiradas foram desativadas.')
 
 
 async def job_update_invoices():

@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -7,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import GRACE_PERIOD_DAYS, MAX_OFFLINE_DAYS
 from app.auth.models import AuditLog, ClientProfile, ClientUser, PartnerProfile, User
+from app.core.logger import logger
 from app.finance.constants import IVA_TAX_RATE
-from app.finance.service import FinanceService
 from app.license.config import license_settings
 from app.license.exceptions import (
     LicenseNotFoundException,
@@ -26,8 +27,12 @@ from app.plan.exceptions import (
 from app.plan.models import ERPPlan, PartnerPlan
 from app.user.exceptions import UserClientNotFoundException, UserPartnerNotFoundException
 
+license_log = logger.bind(license_event=True)
+
 
 class LicenseService:
+    LICENSE_PATTERN = re.compile(r'^PRT-\d{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$')
+
     @staticmethod
     async def get_client_license(session: AsyncSession, user: User) -> Optional[ClientLicense]:
         """Lógica exclusiva para buscar licença de Clientes e seus utilizadores."""
@@ -88,15 +93,19 @@ class LicenseService:
         """Verifica se a licença existe, está ativa e não expirou."""
         stmt = select(ClientLicense).where(
             ClientLicense.client_id == client_id,
-            ClientLicense.is_active,
-            ClientLicense.expiry_date >= datetime.now(timezone.utc),
         )
         res = await session.execute(stmt)
-        return res.scalar_one_or_none() is not None
+        data = res.scalar_one_or_none()
+        if not data:
+            raise LicenseNotFoundException()
+
+        if not data.is_active and data.expiry_date >= datetime.now(timezone.utc):
+            return False
+        return True
 
     # License Expiry
     @staticmethod
-    async def deactivate_expired_licenses(session: AsyncSession):
+    async def deactivate_client_expired_licenses(session: AsyncSession):
         """Busca e desativa todas as licenças que passaram da data de expiração."""
         now = datetime.now(timezone.utc)
 
@@ -104,6 +113,22 @@ class LicenseService:
         stmt = (
             update(ClientLicense)
             .where(ClientLicense.is_active, ClientLicense.expiry_date < now)
+            .values(is_active=False)
+        )
+
+        result = await session.execute(stmt)
+        await session.commit()
+        return result.rowcount
+
+    @staticmethod
+    async def deactivate_partner_expired_licenses(session: AsyncSession):
+        """Busca e desativa todas as licenças que passaram da data de expiração."""
+        now = datetime.now(timezone.utc)
+
+        # Seleciona apenas licenças ativas que já deveriam ter expirado
+        stmt = (
+            update(PartnerLicense)
+            .where(PartnerLicense.is_active, PartnerLicense.expiry_date < now)
             .values(is_active=False)
         )
 
@@ -151,6 +176,8 @@ class LicenseService:
 
         # Gerar a Fatura (O emissor é o Admin/Actor)
         # O base_amount vem do preço do plano de parceiro
+        from app.finance.service import FinanceService
+
         new_invoice = await FinanceService.create_invoice_for_license(
             session=session,
             actor_id=user_id,
@@ -197,6 +224,7 @@ class LicenseService:
     ) -> ClientLicense:
         """
         Emite uma licença para um cliente, validando regras e gerando a chave RSA.
+        Emite a fatura junto com a licença para o cliente efetuar o pagamento.
         """
         result = await session.execute(
             select(PartnerProfile).where(PartnerProfile.user_id == user_id)
@@ -277,7 +305,7 @@ class LicenseService:
             'issued_at': datetime.now(timezone.utc).isoformat(),
             'grace_expiration_days': GRACE_PERIOD_DAYS,
             'status': 'active',
-            'origin': 'backend_api',
+            'origin': 'project_g_api',
         }
 
         if not offline_only:
@@ -301,6 +329,8 @@ class LicenseService:
         await session.flush()
 
         # Criar a Fatura vinculada à licença recém-criada
+        from app.finance.service import FinanceService
+
         new_invoice = await FinanceService.create_invoice_for_license(
             session=session,
             actor_id=user_id,
@@ -458,5 +488,99 @@ class LicenseService:
             raise e
 
     @staticmethod
-    async def my_license():
-        pass
+    async def deactivate_license(session: AsyncSession, license_id: str, reason: str = 'Manual'):
+        """
+        Desativa uma licença: is_active = False e status = 'inactive'
+        """
+        try:
+            # Buscamos a licença primeiro para pegar o metadata atual
+            stmt = select(ClientLicense).where(ClientLicense.id == license_id)
+            result = await session.execute(stmt)
+            license_obj = result.scalar_one_or_none()
+
+            if not license_obj:
+                license_log.error(f'Tentativa de desativar licença inexistente: {license_id}')
+                return None
+
+            # Atualizamos o dicionário de metadata mantendo o que já existia
+            new_metadata = dict(license_obj.metadata_info or {})
+            new_metadata.update(
+                {
+                    'status': 'inactive',
+                    'deactivated_at': datetime.now(timezone.utc).isoformat(),
+                    'deactivation_reason': reason,
+                }
+            )
+
+            # Update no banco
+            license_obj.is_active = False
+            license_obj.metadata_info = new_metadata
+
+            await session.commit()
+            license_log.success(f'Licença {license_id} DESATIVADA. Motivo: {reason}')
+            return license_obj
+
+        except Exception as e:
+            await session.rollback()
+            license_log.error(f'Erro ao desativar licença {license_id}: {str(e)}')
+            raise
+
+    @staticmethod
+    async def activate_license(session: AsyncSession, license_id: str):
+        """
+        Ativa uma licença: is_active = True e status = 'active'
+        """
+        try:
+            stmt = select(ClientLicense).where(ClientLicense.id == license_id)
+            result = await session.execute(stmt)
+            license_obj = result.scalar_one_or_none()
+
+            if not license_obj:
+                license_log.error(f'Tentativa de ativar licença inexistente: {license_id}')
+                return None
+
+            # Atualizamos o status no metadata
+            new_metadata = dict(license_obj.metadata_info or {})
+            new_metadata.update(
+                {
+                    'status': 'active',
+                    'activated_at': datetime.now(timezone.utc).isoformat(),
+                    'deactivation_reason': None,
+                }
+            )
+
+            license_obj.is_active = True
+            license_obj.metadata_info = new_metadata
+
+            await session.commit()
+            license_log.success(f'Licença {license_id} ATIVADA com sucesso.')
+            return license_obj
+
+        except Exception as e:
+            await session.rollback()
+            license_log.error(f'Erro ao ativar licença {license_id}: {str(e)}')
+            raise
+
+    @staticmethod
+    async def verify_partner_license(session: AsyncSession, license_key: str) -> bool:
+        """
+        Verifica se a licença do parceiro é válida, ativa e não expirada.
+        """
+        if not license_key or not LicenseService.LICENSE_PATTERN.match(license_key):
+            return False
+
+        stmt = select(PartnerLicense).where(PartnerLicense.license_key == license_key)
+        result = await session.execute(stmt)
+        license_obj = result.scalar_one_or_none()
+
+        if not license_obj:
+            raise LicenseNotFoundException()
+
+        if not license_obj.is_active:
+            return False
+
+        if hasattr(license_obj, 'expiry_date') and license_obj.expiry_date:
+            if license_obj.expiry_date < datetime.now(timezone.utc):
+                return False
+
+        return True

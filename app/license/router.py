@@ -1,13 +1,15 @@
 import uuid
-from typing import Union
+from typing import Annotated, Union
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Path, status
 
-from app.auth.dependencies import CurrentSession, CurrentUser, RoleChecker
+from app.auth.dependencies import CurrentSession, CurrentUser, RoleChecker, allow_any
 from app.auth.models import UserRole
 from app.license.schemas import (
+    LICENSE_REGEX,
     ClientLicenseEmit,
     ClientLicenseResponse,
+    LicenseVerifyResponse,
     PartnerLicenseAssign,
     PartnerLicenseResponse,
 )
@@ -21,10 +23,13 @@ router = APIRouter(prefix='/licenses', tags=['Licensing'])
     response_model=PartnerLicenseResponse,
     dependencies=[Depends(RoleChecker([UserRole.ADMIN]))],
 )
-async def assign_license_to_partner(data: PartnerLicenseAssign, session: CurrentSession):
+async def assign_license_to_partner(
+    data: PartnerLicenseAssign, session: CurrentSession, current_user: CurrentUser
+):
     """O Admin atribui/vende um plano de revenda a um Parceiro."""
     return await LicenseService.assign_license_to_partner(
         session,
+        user_id=current_user.id,
         partner_id=data.partner_id,
         partner_plan_id=data.partner_plan_id,
         period=data.period,
@@ -77,6 +82,39 @@ async def get_my_license(
     if current_user.role == UserRole.PARTNER:
         return await LicenseService.get_partner_license(session, current_user)
     return await LicenseService.get_client_license(session, current_user)
+
+
+@router.get(
+    '/client/verify/{client_id}',
+    response_model=LicenseVerifyResponse,
+    dependencies=[Depends(allow_any)],
+)
+async def verify_client_license(
+    client_id: uuid.UUID,
+    session: CurrentSession,
+    current_user: CurrentUser,
+):
+    """Verifica se a licença do cliente é válida."""
+    res = await LicenseService.is_license_valid(session, client_id)
+    return {'valid': res}
+
+
+@router.get(
+    '/partner/verify/{license_key}',
+    response_model=LicenseVerifyResponse,
+    dependencies=[Depends(allow_any)],
+)
+async def verify_license(
+    license_key: Annotated[
+        str,
+        Path(pattern=LICENSE_REGEX, title='Chave da Licença', examples=['PRT-2026-GVO3-AQK6-TYTF']),
+    ],
+    session: CurrentSession,
+    current_user: CurrentUser,
+):
+    """Verifica se a licença do parceiro é válida."""
+    res = await LicenseService.verify_partner_license(session, license_key)
+    return {'valid': res}
 
 
 @router.post(

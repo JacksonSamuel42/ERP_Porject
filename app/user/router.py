@@ -19,6 +19,7 @@ from app.auth.schemas import (
     PartnerProfileResponse,
     UserResponse,
 )
+from app.core.upload_utils import S3UploadUtils
 from app.user.schemas import (
     ClientProfileUpdate,
     ClientUserUpdate,
@@ -48,6 +49,23 @@ async def list_users(
     return await UserService.get_all_users(session, filters=filters)
 
 
+@router.get('/me', response_model=Any)
+async def get_my_profile(
+    current_user: CurrentUser,
+    session: CurrentSession,
+):
+    return {
+        'id': current_user.id,
+        'name': current_user.name,
+        'email': current_user.email,
+        'username': current_user.username,
+        'role': current_user.role,
+        'is_active': current_user.is_active,
+        'is_verified': current_user.is_verified,
+        'created_at': current_user.created_at,
+    }
+
+
 @router.get('/{user_id}', response_model=UserResponse)
 async def get_user(user_id: uuid.UUID, session: CurrentSession, current_user: CurrentUser):
     return await UserService.get_user(session, user_id)
@@ -61,7 +79,12 @@ async def list_partners(
     search: Optional[str] = None,
 ):
     filters = {'search': search}
-    return await UserService.get_all_partners(session, filters=filters)
+    page = await UserService.get_all_partners(session, filters=filters)
+
+    for partner in page.items:
+        if partner.logo:
+            partner.logo = await S3UploadUtils.generate_presigned_url(partner.logo)
+    return page
 
 
 @router.get('/partners/{partner_id}', response_model=PartnerProfileResponse)
@@ -78,7 +101,13 @@ async def list_clients(
 ):
     """Admin ou Parceiro listando clientes."""
     filters = {'search': search}
-    return await UserService.get_all_clients(session, partner_id=partner_id, filters=filters)
+
+    page = await UserService.get_all_clients(session, partner_id=partner_id, filters=filters)
+
+    for client in page.items:
+        if client.logo:
+            client.logo = await S3UploadUtils.generate_presigned_url(client.logo)
+    return page
 
 
 @router.get('/clients/{client_id}', response_model=ClientProfileResponse)
@@ -136,23 +165,6 @@ async def reset_password(
     session: CurrentSession,
 ):
     return await UserService.reset_password(session, data.token, data.new_password)
-
-
-@router.get('/me', response_model=Any)
-async def get_my_profile(
-    current_user: CurrentUser,
-    session: CurrentSession,
-):
-    return {
-        'id': current_user.id,
-        'name': current_user.name,
-        'email': current_user.email,
-        'username': current_user.username,
-        'role': current_user.role,
-        'is_active': current_user.is_active,
-        'is_verified': current_user.is_verified,
-        'created_at': current_user.created_at,
-    }
 
 
 @router.patch('/me', response_model=Any)

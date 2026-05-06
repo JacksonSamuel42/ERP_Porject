@@ -112,6 +112,7 @@ class PaymentLicense(Base):
     )
 
     payment_method: Mapped[Optional[str]] = mapped_column(String)  # 'transfer', 'cash', 'gateway'
+    transaction_reference: Mapped[str] = mapped_column(String)
     payment_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

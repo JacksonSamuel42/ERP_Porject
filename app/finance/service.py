@@ -104,9 +104,8 @@ class FinanceService:
         ip_address: Optional[str] = None,
     ) -> PaymentLicense:
         """
-        Registra o pagamento de uma fatura de licença e atualiza os status.
+        Registra o pagamento de uma fatura de licença e atualiza os status e licenças.
         """
-        # Buscar a fatura
         result = await session.execute(
             select(InvoiceLicense).where(InvoiceLicense.id == invoice_id)
         )
@@ -115,6 +114,7 @@ class FinanceService:
         if not invoice:
             raise InvoiceNotFoundException()
 
+        # Validações de status e expiração
         if invoice.due_date < datetime.now(timezone.utc):
             invoice.status = InvoiceStatus.OVERDUE
             await session.commit()
@@ -123,8 +123,34 @@ class FinanceService:
         if invoice.status != InvoiceStatus.OPEN:
             raise InvalidInvoiceStateException(invoice.status.value)
 
-        # Criar o registro de pagamento
-        # Determinamos o tipo baseado em quem é o destinatário da fatura
+        target_partner_license_id = None
+        target_client_license_id = None
+        activated_entity_type = None
+
+        if invoice.recipient_partner_id:
+            res = await session.execute(
+                select(PartnerLicense).where(
+                    PartnerLicense.partner_id == invoice.recipient_partner_id
+                )
+            )
+            partner_license = res.scalar_one_or_none()
+
+            if partner_license:
+                partner_license.is_active = True
+                target_partner_license_id = partner_license.id
+                activated_entity_type = 'PARTNER_LICENSE'
+
+        elif invoice.recipient_client_id:
+            res = await session.execute(
+                select(ClientLicense).where(ClientLicense.client_id == invoice.recipient_client_id)
+            )
+            client_license = res.scalar_one_or_none()
+
+            if client_license:
+                client_license.is_active = True
+                target_client_license_id = client_license.id
+                activated_entity_type = 'CLIENT_LICENSE'
+
         tx_type = (
             LicenseTransactionType.CLIENT_LICENSE
             if invoice.recipient_client_id
@@ -134,33 +160,18 @@ class FinanceService:
         new_payment = PaymentLicense(
             type=tx_type,
             invoice_id=invoice.id,
-            partner_license_id=invoice.recipient_partner_id,
-            client_license_id=invoice.recipient_client_id,
+            partner_license_id=target_partner_license_id,
+            client_license_id=target_client_license_id,
             amount=invoice.total_amount,
             status=PaymentStatus.PAID,
             payment_method=payment_method,
+            transaction_reference=transaction_reference,
             payment_date=datetime.now(timezone.utc),
         )
 
-        # Ativando a licença
-        activated_entity_type = None
-
-        if invoice.partner_license_id:
-            # Ativar licença do Parceiro
-            partner_lic = await session.get(PartnerLicense, invoice.partner_license_id)
-            if partner_lic:
-                partner_lic.is_active = True
-                activated_entity_type = 'PARTNER_LICENSE'
-        elif invoice.client_license_id:
-            # Ativar licença do Cliente
-            client_lic = await session.get(ClientLicense, invoice.client_license_id)
-            if client_lic:
-                client_lic.is_active = True
-                activated_entity_type = 'CLIENT_LICENSE'
-
-        # Atualizar status da fatura
         invoice.status = InvoiceStatus.PAID
         session.add(new_payment)
+
         await session.flush()
 
         await FinanceService._log_action(
@@ -172,6 +183,7 @@ class FinanceService:
                 'invoice_id': str(invoice_id),
                 'activated_type': activated_entity_type,
                 'method': payment_method,
+                'ref': transaction_reference,
             },
             ip_address,
         )
@@ -271,6 +283,8 @@ class FinanceService:
         """
         Cancela uma fatura aberta. Se já estiver paga, exige processo de reembolso.
         """
+        from app.license.service import LicenseService
+
         invoice = await FinanceService.get_invoice_with_payments(session, invoice_id)
 
         if not invoice:
@@ -284,7 +298,14 @@ class FinanceService:
         invoice.notes = f'{invoice.notes or ""} | Motivo Cancelamento: {reason}'
 
         # Opcional: Aqui você pode disparar a lógica para desativar a licença vinculada
-        # await LicenseService.deactivate_license(session, invoice.client_license_id)
+        if invoice.client_license_id:
+            await LicenseService.deactivate_license(
+                session, invoice.client_license_id, reason, is_client_license=True
+            )
+        if invoice.recipient_partner_id:
+            partner_lic = await session.get(PartnerLicense, invoice.partner_license_id)
+            if partner_lic:
+                partner_lic.is_active = True
 
         await FinanceService._log_action(
             session,
@@ -296,6 +317,7 @@ class FinanceService:
         )
 
         await session.flush()
+        await session.commit()
         return invoice
 
     @staticmethod
@@ -357,5 +379,6 @@ class FinanceService:
             .where(InvoiceLicense.due_date < datetime.now(timezone.utc))
             .values(status=InvoiceStatus.OVERDUE)
         )
-        await session.execute(stmt)
+        result = await session.execute(stmt)
         await session.commit()
+        return result.rowcount
